@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using TabOrganizer_website.Data;
 using TabOrganizer_website.Dtos;
 using TabOrganizer_website.Helpers;
@@ -21,24 +22,28 @@ namespace TabOrganizer_website.Controllers
     {
         private readonly IUserService _userService;
         private readonly IMapper _mapper;
+        private readonly ILogger<UserController> _logger;
 
-        public UserController(IUserService userService, IMapper mapper)
+        public UserController(IUserService userService, IMapper mapper, ILogger<UserController> logger)
         {
             _userService = userService;
             _mapper = mapper;
+            _logger = logger;
         }
 
         [AllowAnonymous]
         [HttpPost("authenticate", Name = nameof(Authenticate))]
         public async Task<IActionResult> Authenticate([FromBody] UserDto userDto)
         {
-
+            _logger.LogDebug(1, "Authenticate started from UserController");
             try
             {
                 var user = await _userService.Authenticate(userDto.Username, userDto.Password);
 
                 if (user == null)
                     return BadRequest(new { message = "Username or password is incorrect" });
+
+                _logger.LogDebug(1, "Authenticate ended in UserController");
 
                 return Ok(new //return user info w/o password
                 {
@@ -52,6 +57,7 @@ namespace TabOrganizer_website.Controllers
             }
             catch (AuthenticationException ex)
             {
+                _logger.LogError(1, "AuthenticationException has occurred");
                 return BadRequest(ex.Message);
             }
         }
@@ -66,6 +72,7 @@ namespace TabOrganizer_website.Controllers
                 await _userService.Create(user, userDto.Password);
                 if(!_userService.Save().Result)
                 {
+                    _logger.LogError(1, "Exception has occurred with message 'Creating a user failed on save.'");
                     throw new Exception("Creating a user failed on save.");
                 }
                 return Ok();
@@ -86,6 +93,7 @@ namespace TabOrganizer_website.Controllers
             if (users != null)
                 return Ok(_mapper.Map<IEnumerable<UserDto>>(users));
 
+            _logger.LogDebug(1, "Users not found");
             return NotFound();
         }
 
@@ -111,7 +119,10 @@ namespace TabOrganizer_website.Controllers
         {
             var currentUserId = int.Parse(User.Identity.Name);
             if (id != currentUserId && !User.IsInRole(Role.Admin))
+            {
+                _logger.LogError(1, "Updating user is forbidden");
                 return Forbid();
+            }
 
             var userFromDb = await _userService.GetById(id);
             if (userFromDb == null)
@@ -145,8 +156,12 @@ namespace TabOrganizer_website.Controllers
 
             await _userService.Delete(id);
             if (!await _userService.Save())//????
+            {
+                _logger.LogError(1, "Deleting user failed on save");
                 throw new Exception("Deleting user failed on save.");
+            }
 
+            _logger.LogDebug(1, "User deleted");
             return NoContent();
 
         }
